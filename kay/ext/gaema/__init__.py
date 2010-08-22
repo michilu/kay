@@ -149,6 +149,10 @@ class YahooAuth(GAEMultiAuthMixin, auth.YahooMixin):
   arg_in_callback = 'openid.mode'
 
 
+class EvernoteAuth(GAEMultiAuthMixin, auth.EvernoteMixin):
+  arg_in_callback = 'oauth_token'
+
+
 class GoogleMarketPlaceAuth(GoogleAuth):
 
   def __init__(self, request, domain):

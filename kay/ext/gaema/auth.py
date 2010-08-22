@@ -883,7 +883,7 @@ def _oauth_escape(val):
 
 def _oauth_parse_response(body):
     p = cgi.parse_qs(body, keep_blank_values=False)
-    token = dict(key=p["oauth_token"][0], secret=p["oauth_token_secret"][0])
+    token = dict(key=p["oauth_token"][0], secret=p.get("oauth_token_secret", [""])[0])
 
     # Add the extra parameters the Provider included to the token
     special = ("oauth_token", "oauth_token_secret")
@@ -892,4 +892,122 @@ def _oauth_parse_response(body):
 
 class YahooMixin(OpenIdMixin):
   _OPENID_ENDPOINT = 'https://open.login.yahooapis.com/openid/op/auth'
+
+class EvernoteMixin(OAuthMixin):
+    _OAUTH_REQUEST_TOKEN_URL = 'https://sandbox.evernote.com/oauth'
+    _OAUTH_ACCESS_TOKEN_URL = "https://sandbox.evernote.com/oauth"
+    _OAUTH_AUTHORIZE_URL = "https://sandbox.evernote.com/OAuth.action"
+    _OAUTH_AUTHENTICATE_URL = 'https://sandbox.evernote.com/OAuth.action'
+    _OAUTH_CALLBACK = "evernote"
+    _EVERNOTE_USER_STORE_URL = "http://sandbox.evernote.com/edam/user"
+    _EVERNOTE_FORMAT = "?format=microclip"
+
+    def authenticate_redirect(self):
+        http = httpclient.AsyncHTTPClient()
+        http.fetch(self._oauth_request_token_url(), self.async_callback(
+            self._on_request_token, self._OAUTH_AUTHENTICATE_URL, self._OAUTH_CALLBACK))
+
+    def _on_request_token(self, authorize_url, callback_uri, response):
+        consumer_token = self._oauth_consumer_token()
+        if response.error:
+            raise InternalServerError("Could not get request token")
+        request_token = _oauth_parse_response(response.body)
+        data = "|".join([request_token["key"], request_token["secret"]])
+        self.set_cookie("_oauth_request_token", data)
+        args = dict(
+            oauth_token=request_token["key"],
+            oauth_consumer_key=consumer_token["key"],
+            oauth_signature_method="PLAINTEXT",
+        )
+        signature = _oauth_plaintext_signature(consumer_token)
+        args["oauth_signature"] = signature
+        if callback_uri:
+            args["oauth_callback"] = urlparse.urljoin(
+                self.request.full_url(), callback_uri)
+        self.redirect(make_full_url(authorize_url, args))
+
+    def _oauth_consumer_token(self):
+        self.require_setting("evernote_consumer_key", "Evernote OAuth")
+        self.require_setting("evernote_consumer_secret", "Evernote OAuth")
+        return dict(
+            key=self.settings["evernote_consumer_key"],
+            secret=self.settings["evernote_consumer_secret"])
+
+    def _oauth_request_token_url(self):
+        consumer_token = self._oauth_consumer_token()
+        url = self._OAUTH_REQUEST_TOKEN_URL
+        args = dict(
+            oauth_consumer_key=consumer_token["key"],
+            oauth_signature_method="PLAINTEXT",
+            oauth_callback=self.request.full_url(),
+            #oauth_timestamp=str(int(time.time())),
+            #oauth_nonce=binascii.b2a_hex(uuid.uuid4().bytes),
+            #oauth_version="1.0a",
+        )
+        signature = _oauth_plaintext_signature(consumer_token)
+        args["oauth_signature"] = signature
+        return make_full_url(url, args)
+
+    def _oauth_access_token_url(self, request_token):
+        consumer_token = self._oauth_consumer_token()
+        url = self._OAUTH_ACCESS_TOKEN_URL
+        args = dict(
+            oauth_consumer_key=consumer_token["key"],
+            oauth_token=request_token["key"],
+            oauth_signature_method="PLAINTEXT",
+            #oauth_timestamp=str(int(time.time())),
+            #oauth_nonce=binascii.b2a_hex(uuid.uuid4().bytes),
+            #oauth_version="1.0a",
+        )
+        signature = _oauth_plaintext_signature(consumer_token)
+        args["oauth_signature"] = signature
+        return make_full_url(url, args)
+
+    def get_authenticated_user(self, callback):
+        request_key = self.get_argument("oauth_token")
+        request_cookie = self.get_cookie("_oauth_request_token")
+        if not request_cookie:
+            logging.warning("Missing OAuth request token cookie")
+            callback(None)
+            return
+        self.clear_cookie("_oauth_request_token")
+        cookie_key, cookie_secret = request_cookie.split("|")
+        if cookie_key != request_key:
+            logging.warning("Request token does not match cookie")
+            callback(None)
+            return
+        token = dict(key=cookie_key, secret=cookie_secret)
+        http = httpclient.AsyncHTTPClient()
+        http.fetch(self._oauth_access_token_url(token), self.async_callback(
+            self._on_access_token, callback))
+
+    def _oauth_get_user(self, access_token, callback):
+        from thrift.protocol import TBinaryProtocol
+        from thrift.transport import THttpClient
+        from evernote.edam.userstore import UserStore
+        userStoreHttpClient = THttpClient.THttpClient(_EVERNOTE_USER_STORE_URL)
+        userStoreProtocol = TBinaryProtocol.TBinaryProtocol(userStoreHttpClient)
+        userStore = UserStore.Client(userStoreProtocol)
+        logging.debug(access_token)
+        evernote_user = userStore.getUser(access_token["key"])
+        user = evernote_user.__dict__
+        user["evernote_user"] = evernote_user
+        callback(user)
+
+    def _on_oauth_get_user(self, access_token, callback, user):
+        if not user:
+            callback(None)
+            return
+        user["access_token"] = access_token["key"]
+        callback(user)
+
+def _oauth_plaintext_signature(consumer_token):
+    """
+
+    See http://oauth.net/core/1.0/#rfc.section.9.4
+    """
+    key_elems = []
+    key_elems.append(_oauth_escape(consumer_token["secret"]))
+    key = "&".join(key_elems)
+    return key
 

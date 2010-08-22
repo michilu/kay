@@ -10,7 +10,7 @@ kay.ext.gaema.views
 
 from kay import exceptions
 from kay.ext.gaema import (
-  GoogleAuth, TwitterAuth, FacebookAuth, YahooAuth
+  GoogleAuth, TwitterAuth, FacebookAuth, YahooAuth, EvernoteAuth
 )
 from kay.ext.gaema.auth import OpenIdMixin
 
@@ -19,6 +19,7 @@ GOOG_HYBRID = 'goog_hybrid'
 TWITTER = 'twitter'
 FACEBOOK = 'facebook'
 YAHOO = 'yahoo'
+EVERNOTE = 'evernote'
 
 available_services = [
   GOOG_OPENID,
@@ -26,6 +27,7 @@ available_services = [
   TWITTER,
   FACEBOOK,
   YAHOO,
+  EVERNOTE,
 ]
 
 hybrid_services = [
@@ -38,6 +40,7 @@ auth_modules = {
   TWITTER: TwitterAuth,
   FACEBOOK: FacebookAuth,
   YAHOO: YahooAuth,
+  EVERNOTE: EvernoteAuth,
 }
 
 verbose_names = {
@@ -46,6 +49,7 @@ verbose_names = {
   TWITTER: u'Twitter',
   FACEBOOK: u'Facebook',
   YAHOO: u'Yahoo OpenID',
+  EVERNOTE: u'Evernote',
 }
 
 def get_key_name(user):
