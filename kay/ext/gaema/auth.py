@@ -985,7 +985,7 @@ class EvernoteMixin(OAuthMixin):
         from thrift.protocol import TBinaryProtocol
         from thrift.transport import THttpClient
         from evernote.edam.userstore import UserStore
-        userStoreHttpClient = THttpClient.THttpClient(_EVERNOTE_USER_STORE_URL)
+        userStoreHttpClient = THttpClient.THttpClient(self._EVERNOTE_USER_STORE_URL)
         userStoreProtocol = TBinaryProtocol.TBinaryProtocol(userStoreHttpClient)
         userStore = UserStore.Client(userStoreProtocol)
         logging.debug(access_token)
